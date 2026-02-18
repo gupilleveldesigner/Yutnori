@@ -791,7 +791,7 @@ export default function YutnoriGame() {
     const toggleFullscreen = useCallback(() => {
         if (!document.fullscreenElement) {
             document.documentElement.requestFullscreen().catch((e) => {
-                console.log(`Fullscreen error: ${e.message}`);
+                // silently ignore fullscreen errors
             });
         } else {
             if (document.exitFullscreen) {
