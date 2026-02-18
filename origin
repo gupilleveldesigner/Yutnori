@@ -1,0 +1,870 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>윷놀이 (반응형)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            touch-action: none;
+            overscroll-behavior: none;
+            font-family: 'Noto Sans KR', sans-serif;
+            background-color: #fdf6e3;
+            user-select: none;
+            -webkit-user-select: none;
+            overflow: hidden;
+        }
+
+        /* 기본적으로 경고 숨김 */
+        #portrait-warning {
+            display: none;
+        }
+
+        /* --- 반응형 및 기기별 스타일 --- */
+
+        /* 1. 모바일 기기이면서 세로 모드일 때만 경고 표시 */
+        @media (orientation: portrait) {
+            body.is-mobile #portrait-warning {
+                display: flex;
+            }
+            body.is-mobile #main-game {
+                display: none;
+            }
+
+            /* 2. PC(또는 비모바일)에서 세로 비율일 때는 레이아웃을 상하(Column)로 변경 */
+            body.is-pc #main-game {
+                flex-direction: column;
+            }
+            body.is-pc #board-wrapper {
+                flex: 1;
+                width: 100%;
+                padding: 1rem;
+            }
+            body.is-pc #boardContainer {
+                max-width: 90vw;
+                max-height: 55vh; /* 상단 보드 영역 제한 */
+                margin: 0 auto;
+            }
+            body.is-pc #sidebar {
+                width: 100%;
+                height: 40vh; /* 하단 영역 확보 */
+                border-left: none;
+                border-top: 1px solid rgba(120, 53, 15, 0.2);
+                flex-shrink: 0;
+            }
+            /* PC 세로 모드에서 나기 구역 위치 조정 */
+            body.is-pc #finishZone {
+                right: -5%;
+                bottom: -5%;
+                width: 20%;
+                height: 20%;
+            }
+        }
+
+        /* 윷놀이 판 배경 */
+        .board-bg {
+            background-image: radial-gradient(circle, #eecfa1 20%, #deb887 90%);
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3);
+        }
+
+        /* 말 스타일 */
+        .mal {
+            transition: transform 0.1s;
+            cursor: grab;
+            z-index: 50;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            color: white;
+            text-shadow: 0 1px 2px rgba(0,0,0,0.5);
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+            touch-action: none;
+        }
+        .mal:active {
+            cursor: grabbing;
+            transform: scale(1.1);
+            z-index: 100;
+        }
+        /* 골인한 말 스타일 */
+        .mal.finished {
+            cursor: default;
+            opacity: 0.8;
+            transform: scale(0.8);
+            box-shadow: none;
+            border-style: dashed;
+        }
+        .mal.finished::after {
+            content: '✔';
+            position: absolute;
+            font-size: 1.2rem;
+            color: #10b981; /* Green-500 */
+            text-shadow: 0 0 2px white;
+        }
+        
+        .station {
+            fill: #fff;
+            stroke: #8b4513;
+            stroke-width: 2px;
+            transition: fill 0.2s, r 0.2s;
+        }
+        .station.highlight {
+            fill: #fbbf24; /* Amber-400 */
+            stroke: #d97706;
+            stroke-width: 4px;
+            r: 45 !important;
+        }
+        /* 시작/도착 칸 강조 */
+        .station-start-end {
+            stroke: #dc2626; /* Red-600 */
+            stroke-width: 3px;
+        }
+
+        /* 나기(Exit) 영역 스타일 */
+        .exit-zone {
+            background: rgba(34, 197, 94, 0.05);
+            border: 2px dashed #16a34a;
+            color: #15803d;
+            transition: all 0.3s;
+            opacity: 0.5;
+            pointer-events: none;
+        }
+        .exit-zone.enabled {
+            opacity: 1;
+            background: rgba(34, 197, 94, 0.2);
+            pointer-events: auto;
+        }
+        .exit-zone.active {
+            background: rgba(34, 197, 94, 0.5);
+            transform: scale(1.1);
+            box-shadow: 0 0 20px rgba(34, 197, 94, 0.5);
+            border-style: solid;
+        }
+
+        /* 애니메이션 효과 */
+        @keyframes popIn {
+            0% { transform: translate(-50%, -50%) scale(0.5); opacity: 0; }
+            50% { transform: translate(-50%, -50%) scale(1.2); opacity: 1; }
+            100% { transform: translate(-50%, -50%) scale(1.0); opacity: 1; }
+        }
+        .action-effect {
+            animation: popIn 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+        }
+
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+    </style>
+</head>
+<body class="h-screen w-screen">
+
+    <!-- 1. 세로 모드 경고 (모바일 전용) -->
+    <div id="portrait-warning" class="fixed inset-0 z-[99999] bg-black/90 text-white flex-col items-center justify-center p-4 text-center">
+        <div class="text-6xl mb-4">📱↻</div>
+        <h1 class="text-2xl font-bold mb-2">화면을 가로로 돌려주세요</h1>
+        <p class="text-gray-400">모바일 환경에서는 가로 모드 플레이를 권장합니다.</p>
+    </div>
+
+    <!-- 2. 액션 메시지 오버레이 -->
+    <div id="actionOverlay" class="fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-[9999] pointer-events-none hidden flex-col items-center justify-center w-full">
+        <div id="actionText" class="text-7xl md:text-8xl font-black text-white drop-shadow-[0_5px_5px_rgba(0,0,0,0.8)] stroke-black action-effect text-center whitespace-nowrap">
+            잡았다!
+        </div>
+        <div id="actionSubText" class="text-2xl md:text-4xl font-bold text-yellow-300 mt-4 drop-shadow-md text-center bg-black/50 px-6 py-2 rounded-full">
+            메시지 내용
+        </div>
+    </div>
+
+    <!-- 3. 메인 게임 영역 -->
+    <div id="main-game" class="flex flex-row w-full h-full overflow-hidden">
+        
+        <!-- 왼쪽: 윷놀이 판 -->
+        <div id="board-wrapper" class="flex-1 relative flex items-center justify-center p-4 bg-[#fdf6e3]">
+            <div id="boardContainer" class="relative aspect-square h-full max-h-[95vh] board-bg rounded-full border-4 border-amber-800 shadow-2xl">
+                
+                <svg id="boardSvg" class="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 1000 1000">
+                    <path d="M 150 850 L 150 150 L 850 150 L 850 850 Z" stroke="#8b4513" stroke-width="4" fill="none" opacity="0.6"/>
+                    <path d="M 150 150 L 850 850" stroke="#8b4513" stroke-width="4" fill="none" opacity="0.6"/>
+                    <path d="M 850 150 L 150 850" stroke="#8b4513" stroke-width="4" fill="none" opacity="0.6"/>
+                    <g id="stationsGroup"></g>
+                    <text x="850" y="930" text-anchor="middle" font-size="24" font-weight="bold" fill="#7f1d1d">출발 / 도착</text>
+                </svg>
+
+                <div id="pieceLayer" class="absolute inset-0 w-full h-full"></div>
+
+                <div id="finishZone" class="absolute bottom-[-5%] right-[-15%] w-[25%] h-[25%] exit-zone rounded-full flex flex-col items-center justify-center z-10">
+                    <div class="text-3xl mb-1">🏁</div>
+                    <div class="text-sm md:text-base font-black">나기</div>
+                    <div class="text-xs opacity-70">여기로 드래그</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 오른쪽: 사이드바 -->
+        <div id="sidebar" class="w-64 md:w-80 h-full bg-amber-900/10 border-l border-amber-900/20 shadow-lg flex flex-col shrink-0 z-20">
+            
+            <div class="bg-amber-900 text-amber-50 p-3 shadow flex flex-col gap-3 shrink-0">
+                <div class="flex justify-between items-center">
+                    <h1 class="font-bold text-lg">윷놀이</h1>
+                    <!-- 초기화 버튼 (작게 구석 배치) -->
+                    <button onclick="confirmReset()" class="text-xs bg-amber-800 hover:bg-red-800 text-amber-200 hover:text-white px-2 py-1 rounded border border-amber-700 transition-colors flex items-center gap-1" title="게임 초기화">
+                        <span>↻</span> 초기화
+                    </button>
+                </div>
+
+                <!-- 게임 컨트롤 버튼 (되돌리기 강조) -->
+                <button onclick="undoLastAction()" id="undoBtn" class="w-full bg-yellow-500 hover:bg-yellow-400 active:bg-yellow-600 text-black text-sm font-bold px-3 py-3 rounded shadow transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+                    <span class="text-lg">↺</span> 방금 행동 되돌리기
+                </button>
+                
+                <!-- 전체화면 버튼 -->
+                <button onclick="toggleFullscreen()" class="w-full bg-amber-800 hover:bg-amber-700 active:bg-amber-900 text-amber-100 text-sm font-bold px-3 py-2 rounded shadow transition-colors flex items-center justify-center gap-2 border border-amber-700" title="전체화면 모드로 전환">
+                    <span>⛶</span> 전체화면 모드
+                </button>
+                
+                <div class="grid grid-cols-2 gap-2 text-sm pt-2 border-t border-amber-800/30">
+                    <label class="flex flex-col gap-1">
+                        <span class="text-amber-200 text-xs">팀 수</span>
+                        <select id="teamCount" class="text-black font-bold rounded p-1 text-center bg-white border border-amber-700">
+                            <option value="2" selected>2팀</option>
+                            <option value="3">3팀</option>
+                            <option value="4">4팀</option>
+                            <option value="5">5팀</option>
+                            <option value="6">6팀</option>
+                            <option value="7">7팀</option>
+                            <option value="8">8팀</option>
+                        </select>
+                    </label>
+                    <label class="flex flex-col gap-1">
+                        <span class="text-amber-200 text-xs">말 개수</span>
+                        <select id="pieceCount" class="text-black font-bold rounded p-1 text-center bg-white border border-amber-700">
+                            <option value="1">1개</option>
+                            <option value="2">2개</option>
+                            <option value="3">3개</option>
+                            <option value="4" selected>4개</option>
+                        </select>
+                    </label>
+                </div>
+            </div>
+
+            <div class="flex-1 p-2 overflow-y-auto no-scrollbar flex flex-col gap-2">
+                <div class="text-xs font-bold text-amber-900/50 uppercase tracking-widest text-center mt-1 mb-1">대기실 / 골인</div>
+                <div id="waitingArea" class="flex flex-col gap-2 pb-4">
+                    <!-- 팀별 박스 -->
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+<script>
+    /* --- 기기 감지 (Mobile vs PC) --- */
+    (function detectDevice() {
+        // 간단한 모바일 감지 (UA 체크)
+        const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+        
+        if (isMobile) {
+            document.body.classList.add('is-mobile');
+        } else {
+            document.body.classList.add('is-pc');
+        }
+    })();
+
+    const GAME_CONFIG = {
+        teams: [],
+        pieces: [],
+        stations: [],
+        colors: [
+            { bg: 'bg-red-500', border: 'border-red-700', name: '빨강팀' },
+            { bg: 'bg-blue-500', border: 'border-blue-700', name: '파랑팀' },
+            { bg: 'bg-green-500', border: 'border-green-700', name: '초록팀' },
+            { bg: 'bg-yellow-400', border: 'border-yellow-600', name: '노랑팀' },
+            { bg: 'bg-purple-500', border: 'border-purple-700', name: '보라팀' },
+            { bg: 'bg-orange-500', border: 'border-orange-700', name: '주황팀' },
+            { bg: 'bg-teal-500', border: 'border-teal-700', name: '청록팀' },
+            { bg: 'bg-pink-500', border: 'border-pink-700', name: '분홍팀' }
+        ],
+        radius: 30
+    };
+
+    const SVG_SIZE = 1000;
+    const FINISH_NODE_IDX = 19; 
+    
+    let gameHistory = [];
+
+    /* --- 풀스크린 기능 --- */
+    function toggleFullscreen() {
+        if (!document.fullscreenElement) {
+            document.documentElement.requestFullscreen().catch((e) => {
+                // PC 브라우저 등에서 권한 문제로 실패할 수 있음
+                console.log(`Fullscreen error: ${e.message}`);
+            });
+        } else {
+            if (document.exitFullscreen) {
+                document.exitFullscreen();
+            }
+        }
+    }
+
+    /* --- 초기화 확인 절차 --- */
+    function confirmReset() {
+        if (confirm("현재 게임 상태가 모두 사라집니다.\n정말 초기화 하시겠습니까?")) {
+            initGame();
+        }
+    }
+
+    /* --- 좌표 및 보드 설정 --- */
+    function defineStations() {
+        const stations = [];
+        const padding = 150;
+        const step = (SVG_SIZE - padding * 2) / 5;
+        
+        for(let i=1; i<=5; i++) stations.push({x: SVG_SIZE - padding, y: SVG_SIZE - padding - (step * i)});
+        for(let i=1; i<=5; i++) stations.push({x: SVG_SIZE - padding - (step * i), y: padding});
+        for(let i=1; i<=5; i++) stations.push({x: padding, y: padding + (step * i)});
+        for(let i=1; i<=5; i++) stations.push({x: padding + (step * i), y: SVG_SIZE - padding});
+
+        const center = {x: 500, y: 500, type: 'center'};
+        stations.push({x: 730, y: 270, type: 'diag'}); 
+        stations.push({x: 615, y: 385, type: 'diag'}); 
+        stations.push(center);                          
+        stations.push({x: 385, y: 615, type: 'diag'}); 
+        stations.push({x: 270, y: 730, type: 'diag'}); 
+
+        stations.push({x: 270, y: 270, type: 'diag'}); 
+        stations.push({x: 385, y: 385, type: 'diag'}); 
+        stations.push({x: 615, y: 615, type: 'diag'}); 
+        stations.push({x: 730, y: 730, type: 'diag'}); 
+
+        return stations.map((s, i) => ({...s, renderIdx: i}));
+    }
+
+    function initBoard() {
+        const svgGroup = document.getElementById('stationsGroup');
+        svgGroup.innerHTML = '';
+        GAME_CONFIG.stations = defineStations();
+
+        GAME_CONFIG.stations.forEach((s, i) => {
+            const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+            circle.setAttribute("cx", s.x);
+            circle.setAttribute("cy", s.y);
+            circle.setAttribute("r", GAME_CONFIG.radius);
+            circle.setAttribute("class", "station transition-all duration-200");
+            circle.id = `station-${i}`;
+            
+            if (i === 4 || i === 9 || i === 14 || i === 19 || s.type === 'center') {
+                circle.setAttribute("r", GAME_CONFIG.radius * 1.4);
+                circle.style.strokeWidth = "4px";
+            }
+            if (i === FINISH_NODE_IDX) {
+                circle.classList.add('station-start-end');
+            }
+            
+            svgGroup.appendChild(circle);
+        });
+    }
+    
+    function initGame() {
+        const teamCount = parseInt(document.getElementById('teamCount').value);
+        const pieceCount = parseInt(document.getElementById('pieceCount').value);
+        
+        GAME_CONFIG.teams = [];
+        GAME_CONFIG.pieces = [];
+        gameHistory = [];
+        updateUndoButton();
+        
+        const waitingArea = document.getElementById('waitingArea');
+        waitingArea.innerHTML = '';
+
+        for(let t=0; t<teamCount; t++) {
+            const teamConfig = GAME_CONFIG.colors[t];
+            
+            // 팀 박스
+            const teamDiv = document.createElement('div');
+            teamDiv.className = `flex flex-col p-2 rounded-lg bg-white/60 border-l-4 ${teamConfig.border} shadow-sm`;
+            
+            // 헤더
+            const header = document.createElement('div');
+            header.className = "flex justify-between items-center mb-1 border-b border-gray-200 pb-1";
+            const teamLabel = document.createElement('span');
+            teamLabel.textContent = teamConfig.name;
+            teamLabel.className = `text-sm font-black ${t===3 ? 'text-black' : 'text-gray-800'}`;
+            header.appendChild(teamLabel);
+            teamDiv.appendChild(header);
+
+            // 대기실 영역
+            const piecesDiv = document.createElement('div');
+            piecesDiv.className = "flex flex-wrap gap-2 justify-start min-h-[40px] items-center pieces-container";
+
+            // 골인한 말 영역 (구분선 추가)
+            const finishedDiv = document.createElement('div');
+            finishedDiv.className = "mt-2 pt-1 border-t border-gray-300/50 flex flex-wrap gap-1 items-center min-h-[20px] finished-container";
+            const finishedLabel = document.createElement('span');
+            finishedLabel.textContent = '골인:';
+            finishedLabel.className = "text-[10px] text-gray-500 font-bold mr-1";
+            finishedDiv.appendChild(finishedLabel);
+
+            // 말 생성
+            for(let p=0; p<pieceCount; p++) {
+                const pieceId = `t${t}-p${p}`;
+                GAME_CONFIG.pieces.push({
+                    id: pieceId,
+                    teamIdx: t,
+                    isStacked: false,
+                    stackMembers: [pieceId],
+                    location: 'waiting',
+                    boardIdx: -1
+                });
+
+                const pieceEl = createPieceElement(t, p, pieceId);
+                piecesDiv.appendChild(pieceEl);
+            }
+            
+            teamDiv.appendChild(piecesDiv);
+            teamDiv.appendChild(finishedDiv);
+            waitingArea.appendChild(teamDiv);
+        }
+        
+        document.getElementById('pieceLayer').innerHTML = '';
+        
+        const finishZone = document.getElementById('finishZone');
+        finishZone.classList.remove('enabled', 'active');
+        
+        showBigMessage("게임 시작!", "말을 드래그하여 판 위에 놓으세요", "text-white");
+    }
+
+    function createPieceElement(teamIdx, pieceIdx, id) {
+        const el = document.createElement('div');
+        const colorClass = GAME_CONFIG.colors[teamIdx].bg;
+        const textClass = teamIdx === 3 ? 'text-black' : 'text-white';
+        
+        el.className = `mal w-9 h-9 md:w-10 md:h-10 rounded-full border-2 border-white ${colorClass} ${textClass}`;
+        el.id = id;
+        el.dataset.team = teamIdx;
+        el.dataset.id = id;
+        
+        el.addEventListener('pointerdown', handleDragStart);
+        el.addEventListener('dblclick', handleDoubleClick);
+
+        return el;
+    }
+
+    /* --- 상태 관리 (Undo) --- */
+
+    function saveState() {
+        const stateSnapshot = JSON.parse(JSON.stringify(GAME_CONFIG.pieces));
+        gameHistory.push(stateSnapshot);
+        if (gameHistory.length > 20) gameHistory.shift();
+        updateUndoButton();
+    }
+
+    function undoLastAction() {
+        if (gameHistory.length === 0) return;
+
+        const previousState = gameHistory.pop();
+        GAME_CONFIG.pieces = previousState;
+        
+        renderAllPieces();
+        updateUndoButton();
+        
+        document.querySelectorAll('.station.highlight').forEach(el => el.classList.remove('highlight'));
+        const finishZone = document.getElementById('finishZone');
+        finishZone.classList.remove('active', 'enabled');
+        
+        showBigMessage("되돌리기", "이전 상태로 복구되었습니다", "text-gray-400");
+    }
+
+    function updateUndoButton() {
+        const btn = document.getElementById('undoBtn');
+        btn.disabled = gameHistory.length === 0;
+        if(btn.disabled) {
+            btn.classList.add('opacity-50', 'cursor-not-allowed');
+        } else {
+            btn.classList.remove('opacity-50', 'cursor-not-allowed');
+        }
+    }
+
+    function renderAllPieces() {
+        document.getElementById('pieceLayer').innerHTML = '';
+        const waitingContainers = document.querySelectorAll('.pieces-container');
+        const finishedContainers = document.querySelectorAll('.finished-container');
+        
+        waitingContainers.forEach(container => container.innerHTML = '');
+        finishedContainers.forEach(container => {
+             // 골인 라벨은 유지
+             const label = container.querySelector('span');
+             container.innerHTML = '';
+             if(label) container.appendChild(label);
+        });
+
+        GAME_CONFIG.pieces.forEach(piece => {
+            const teamIdx = piece.teamIdx;
+            const pieceIdx = parseInt(piece.id.split('p')[1]);
+            const el = createPieceElement(teamIdx, pieceIdx, piece.id);
+
+            if (piece.location === 'waiting') {
+                const teamDiv = document.getElementById('waitingArea').children[teamIdx];
+                const container = teamDiv.querySelector('.pieces-container');
+                container.appendChild(el);
+            } 
+            else if (piece.location === 'board') {
+                if (!piece.isStacked) { // 스택된 말은 렌더링 X
+                    document.getElementById('pieceLayer').appendChild(el);
+                    placePieceVisual(el, piece.boardIdx);
+                    updateStackVisual(piece);
+                }
+            } 
+            else if (piece.location === 'finished') {
+                // 골인 영역에 표시
+                const teamDiv = document.getElementById('waitingArea').children[teamIdx];
+                const container = teamDiv.querySelector('.finished-container');
+                el.classList.add('finished');
+                container.appendChild(el);
+            }
+        });
+    }
+
+    /* --- 드래그 & 로직 --- */
+    let draggedEl = null;
+    let dragOffset = {x:0, y:0};
+    let activePieceData = null;
+    let highlightedStationIdx = -1;
+
+    function handleDragStart(e) {
+        const target = e.target.closest('.mal');
+        if(!target) return;
+        
+        const pieceId = target.dataset.id;
+        activePieceData = GAME_CONFIG.pieces.find(p => p.id === pieceId);
+        if(activePieceData.location === 'finished') return;
+
+        draggedEl = target;
+        
+        // 나기 가능 조건 체크
+        const isExitPossible = (activePieceData.location === 'board' && activePieceData.boardIdx === FINISH_NODE_IDX);
+        const finishZone = document.getElementById('finishZone');
+        if (isExitPossible) {
+            finishZone.classList.add('enabled');
+        } else {
+            finishZone.classList.remove('enabled');
+        }
+        
+        // 마우스/터치 좌표
+        const clientX = e.clientX || (e.touches ? e.touches[0].clientX : 0);
+        const clientY = e.clientY || (e.touches ? e.touches[0].clientY : 0);
+        
+        // [수정됨] 말의 현재 픽셀 크기를 가져와서 고정 (비율 깨짐 방지)
+        const w = target.offsetWidth;
+        const h = target.offsetHeight;
+        
+        target.style.width = w + 'px';
+        target.style.height = h + 'px';
+
+        // 커서를 말의 정중앙에 위치시키기 위한 오프셋 (반지름)
+        dragOffset.x = w / 2;
+        dragOffset.y = h / 2;
+
+        target.style.position = 'fixed';
+        // 중요: 보드 위에 있을 때의 transform(translate -50%)을 제거하고 스케일만 적용
+        // 이렇게 해야 left/top 좌표가 말의 좌상단이 되어 오프셋 계산이 정확해짐
+        target.style.transform = 'scale(1.2)'; 
+        target.style.zIndex = 9999;
+        target.style.pointerEvents = 'none';
+        
+        // 드래그 시작 즉시 위치 보정 (커서가 중앙에 오도록)
+        target.style.left = (clientX - dragOffset.x) + 'px';
+        target.style.top = (clientY - dragOffset.y) + 'px';
+        
+        document.body.appendChild(target);
+
+        document.addEventListener('pointermove', handleDragMove);
+        document.addEventListener('pointerup', handleDragEnd);
+        document.addEventListener('pointercancel', handleDragEnd);
+    }
+
+    function handleDragMove(e) {
+        if(!draggedEl) return;
+        e.preventDefault();
+
+        const clientX = e.clientX || (e.touches ? e.touches[0].clientX : 0);
+        const clientY = e.clientY || (e.touches ? e.touches[0].clientY : 0);
+
+        // 마우스 좌표에서 오프셋(반지름)을 뺀 위치로 이동 -> 말의 중심이 마우스에 위치함
+        draggedEl.style.left = (clientX - dragOffset.x) + 'px';
+        draggedEl.style.top = (clientY - dragOffset.y) + 'px';
+
+        const boardRect = document.getElementById('boardSvg').getBoundingClientRect();
+        // 감지 로직용 중심 좌표 (현재 마우스 좌표와 동일)
+        const centerX = clientX; 
+        const centerY = clientY;
+
+        const scaleX = SVG_SIZE / boardRect.width;
+        const scaleY = SVG_SIZE / boardRect.height;
+        const boardX = (centerX - boardRect.left) * scaleX;
+        const boardY = (centerY - boardRect.top) * scaleY;
+
+        let closestIdx = -1;
+        let minDist = 70;
+
+        GAME_CONFIG.stations.forEach((s, idx) => {
+            const dist = Math.hypot(s.x - boardX, s.y - boardY);
+            if(dist < minDist) {
+                minDist = dist;
+                closestIdx = idx;
+            }
+        });
+        
+        let isExitHovered = false;
+        if (activePieceData.location === 'board' && activePieceData.boardIdx === FINISH_NODE_IDX) {
+            const finishZone = document.getElementById('finishZone').getBoundingClientRect();
+            const distToFinish = Math.hypot(
+                centerX - (finishZone.left + finishZone.width/2),
+                centerY - (finishZone.top + finishZone.height/2)
+            );
+            if (distToFinish < 80) isExitHovered = true;
+        }
+
+        if (highlightedStationIdx !== -1 && highlightedStationIdx !== closestIdx) {
+            document.getElementById(`station-${highlightedStationIdx}`)?.classList.remove('highlight');
+        }
+
+        if (isExitHovered) { 
+            document.getElementById('finishZone').classList.add('active');
+            highlightedStationIdx = -2;
+        } else if (closestIdx !== -1) {
+            document.getElementById(`station-${closestIdx}`).classList.add('highlight');
+            document.getElementById('finishZone').classList.remove('active');
+            highlightedStationIdx = closestIdx;
+        } else {
+            document.getElementById('finishZone').classList.remove('active');
+            highlightedStationIdx = -1;
+        }
+    }
+
+    function handleDragEnd(e) {
+        if(!draggedEl) return;
+        
+        document.removeEventListener('pointermove', handleDragMove);
+        document.removeEventListener('pointerup', handleDragEnd);
+        document.removeEventListener('pointercancel', handleDragEnd);
+        
+        draggedEl.style.pointerEvents = 'auto';
+
+        if (highlightedStationIdx >= 0) {
+            document.getElementById(`station-${highlightedStationIdx}`)?.classList.remove('highlight');
+        }
+        
+        const finishZone = document.getElementById('finishZone');
+        finishZone.classList.remove('active', 'enabled');
+
+        if (highlightedStationIdx === -2 || highlightedStationIdx >= 0) {
+            saveState();
+        }
+
+        if (highlightedStationIdx === -2) {
+            if (activePieceData.location === 'board' && activePieceData.boardIdx === FINISH_NODE_IDX) {
+                handleFinish(activePieceData, draggedEl);
+            } else {
+                returnToPrevious(activePieceData, draggedEl);
+            }
+        } else if (highlightedStationIdx >= 0) {
+            handleMoveToStation(activePieceData, draggedEl, highlightedStationIdx);
+        } else {
+            returnToPrevious(activePieceData, draggedEl);
+        }
+
+        draggedEl = null;
+        activePieceData = null;
+        highlightedStationIdx = -1;
+    }
+
+    function handleMoveToStation(piece, el, stationIdx) {
+        const occupant = GAME_CONFIG.pieces.find(p => 
+            p.location === 'board' && 
+            p.boardIdx === stationIdx && 
+            p.id !== piece.id &&
+            !p.isStacked
+        );
+
+        if (occupant) {
+            if (occupant.teamIdx === piece.teamIdx) {
+                // 업기
+                occupant.stackMembers = [...occupant.stackMembers, ...piece.stackMembers];
+                piece.stackMembers.forEach(pid => {
+                    const p = GAME_CONFIG.pieces.find(x => x.id === pid);
+                    p.isStacked = true;
+                    p.location = 'board';
+                    p.boardIdx = stationIdx;
+                });
+                updateStackVisual(occupant);
+                el.remove();
+                showBigMessage("업었다!", `${GAME_CONFIG.colors[piece.teamIdx].name}끼리 뭉쳤습니다!`, "text-blue-400");
+                return;
+            } else {
+                // 잡기
+                const victimName = GAME_CONFIG.colors[occupant.teamIdx].name;
+                occupant.stackMembers.forEach(pid => {
+                    const p = GAME_CONFIG.pieces.find(x => x.id === pid);
+                    p.isStacked = false;
+                    p.stackMembers = [pid];
+                    p.location = 'waiting';
+                    p.boardIdx = -1;
+                    const pEl = document.getElementById(pid);
+                    if(pEl) pEl.remove();
+                    restoreToWaitingArea(p);
+                });
+                showBigMessage("잡았다!", `${victimName}을 집으로 보냅니다!`, "text-red-500");
+            }
+        }
+
+        piece.location = 'board';
+        piece.boardIdx = stationIdx;
+        piece.stackMembers.forEach(pid => {
+             if (pid !== piece.id) GAME_CONFIG.pieces.find(x => x.id === pid).boardIdx = stationIdx;
+        });
+
+        document.getElementById('pieceLayer').appendChild(el);
+        placePieceVisual(el, stationIdx);
+    }
+
+    function handleFinish(piece, el) {
+        // 골인 처리
+        piece.stackMembers.forEach(pid => {
+            const p = GAME_CONFIG.pieces.find(x => x.id === pid);
+            p.location = 'finished';
+            p.boardIdx = -1;
+            p.isStacked = false;
+        });
+        
+        // 말 요소를 제거하지 않고 상태만 변경하여 렌더링 (사이드바 골인 영역으로 이동됨)
+        renderAllPieces(); 
+        
+        const teamName = GAME_CONFIG.colors[piece.teamIdx].name;
+        
+        if(GAME_CONFIG.pieces.filter(p => p.teamIdx === piece.teamIdx).every(p => p.location === 'finished')) {
+            showBigMessage("승리!!!", `${teamName} 최종 우승!`, "text-yellow-400");
+            createConfetti();
+        } else {
+            showBigMessage("골인!", `${teamName} 말 나기 성공!`, "text-green-400");
+        }
+    }
+
+    /* --- 유틸리티 --- */
+    function showBigMessage(mainText, subText, colorClass) {
+        const overlay = document.getElementById('actionOverlay');
+        const textEl = document.getElementById('actionText');
+        const subEl = document.getElementById('actionSubText');
+        
+        overlay.classList.remove('hidden');
+        overlay.classList.add('flex');
+        
+        textEl.classList.remove('action-effect');
+        void textEl.offsetWidth; 
+        textEl.classList.add('action-effect');
+
+        textEl.textContent = mainText;
+        textEl.className = `text-7xl md:text-8xl font-black drop-shadow-[0_5px_5px_rgba(0,0,0,0.8)] stroke-black action-effect text-center whitespace-nowrap ${colorClass}`;
+        subEl.textContent = subText;
+
+        setTimeout(() => {
+            overlay.classList.add('hidden');
+            overlay.classList.remove('flex');
+        }, 1800);
+    }
+
+    function returnToPrevious(piece, el) {
+        if (piece.location === 'waiting') {
+            restoreToWaitingArea(piece);
+            el.remove();
+        } else {
+            document.getElementById('pieceLayer').appendChild(el);
+            placePieceVisual(el, piece.boardIdx);
+        }
+    }
+
+    function placePieceVisual(el, stationIdx) {
+        const station = GAME_CONFIG.stations[stationIdx];
+        const boardRect = document.getElementById('boardSvg').getBoundingClientRect();
+        
+        const leftPct = (station.x / SVG_SIZE) * 100;
+        const topPct = (station.y / SVG_SIZE) * 100;
+
+        el.style.position = 'absolute';
+        el.style.left = `${leftPct}%`;
+        el.style.top = `${topPct}%`;
+        el.style.transform = 'translate(-50%, -50%)';
+        el.style.zIndex = '50';
+        el.style.width = '6.5%';
+        el.style.height = '6.5%';
+    }
+
+    function restoreToWaitingArea(piece) {
+        const waitingArea = document.getElementById('waitingArea');
+        const teamDiv = waitingArea.children[piece.teamIdx]; 
+        const piecesContainer = teamDiv.querySelector('.pieces-container');
+        const newEl = createPieceElement(piece.teamIdx, parseInt(piece.id.split('p')[1]), piece.id);
+        piecesContainer.appendChild(newEl);
+    }
+
+    function updateStackVisual(mainPiece) {
+        const el = document.getElementById(mainPiece.id);
+        if(!el) return;
+        const count = mainPiece.stackMembers.length;
+        el.textContent = count > 1 ? `x${count}` : '';
+        if(count > 1) {
+            el.style.borderWidth = '3px';
+            el.style.borderColor = '#fff';
+        }
+    }
+
+    function handleDoubleClick(e) {
+        const target = e.target.closest('.mal');
+        if(!target) return;
+        const pid = target.dataset.id;
+        const piece = GAME_CONFIG.pieces.find(p => p.id === pid);
+
+        if (piece.stackMembers.length > 1 && piece.location === 'board') {
+            if(confirm("이 말을 분리하시겠습니까?")) {
+                saveState();
+                const currentIdx = piece.boardIdx;
+                const members = [...piece.stackMembers];
+                piece.stackMembers = [piece.id];
+                updateStackVisual(piece);
+
+                members.forEach(mpid => {
+                    if (mpid !== piece.id) {
+                        const mp = GAME_CONFIG.pieces.find(p => p.id === mpid);
+                        mp.isStacked = false;
+                        mp.stackMembers = [mpid];
+                        mp.location = 'board';
+                        mp.boardIdx = currentIdx;
+                        const newEl = createPieceElement(mp.teamIdx, parseInt(mpid.split('p')[1]), mpid);
+                        document.getElementById('pieceLayer').appendChild(newEl);
+                        placePieceVisual(newEl, currentIdx);
+                        newEl.style.marginLeft = `${(Math.random()-0.5)*4}%`;
+                        newEl.style.marginTop = `${(Math.random()-0.5)*4}%`;
+                    }
+                });
+            }
+        }
+    }
+
+    function createConfetti() {
+        for(let i=0; i<60; i++) {
+            const div = document.createElement('div');
+            div.style.cssText = `position:fixed; left:${Math.random()*100}vw; top:-10px; width:10px; height:10px; background:${['#f00','#0f0','#00f', '#ff0'][Math.floor(Math.random()*4)]}; z-index:9999; transition: top 3s cubic-bezier(0.25, 0.46, 0.45, 0.94), opacity 3s;`;
+            document.body.appendChild(div);
+            setTimeout(() => { 
+                div.style.top = '110vh'; 
+                div.style.left = `${parseFloat(div.style.left) + (Math.random()-0.5)*20}vw`; 
+                div.style.opacity = '0'; 
+            }, 100);
+            setTimeout(() => div.remove(), 3100);
+        }
+    }
+
+    initBoard();
+    initGame();
+</script>
+</body>
+</html>

@@ -1,0 +1,162 @@
+@import "tailwindcss";
+
+/* === 전체 레이아웃 === */
+body {
+  touch-action: none;
+  overscroll-behavior: none;
+  font-family: "Noto Sans KR", sans-serif;
+  background-color: #fdf6e3;
+  user-select: none;
+  -webkit-user-select: none;
+  overflow: hidden;
+}
+
+/* 기본적으로 경고 숨김 */
+#portrait-warning {
+  display: none;
+}
+
+/* --- 반응형 및 기기별 스타일 --- */
+
+/* 1. 모바일 기기이면서 세로 모드일 때만 경고 표시 */
+@media (orientation: portrait) {
+  body.is-mobile #portrait-warning {
+    display: flex;
+  }
+  body.is-mobile #main-game {
+    display: none;
+  }
+
+  /* 2. PC(또는 비모바일)에서 세로 비율일 때는 레이아웃을 상하(Column)로 변경 */
+  body.is-pc #main-game {
+    flex-direction: column;
+  }
+  body.is-pc #board-wrapper {
+    flex: 1;
+    width: 100%;
+    padding: 1rem;
+  }
+  body.is-pc #boardContainer {
+    max-width: 90vw;
+    max-height: 55vh;
+    margin: 0 auto;
+  }
+  body.is-pc #sidebar {
+    width: 100%;
+    height: 40vh;
+    border-left: none;
+    border-top: 1px solid rgba(120, 53, 15, 0.2);
+    flex-shrink: 0;
+  }
+  body.is-pc #finishZone {
+    right: -5%;
+    bottom: -5%;
+    width: 20%;
+    height: 20%;
+  }
+}
+
+/* 윷놀이 판 배경 */
+.board-bg {
+  background-image: radial-gradient(circle, #eecfa1 20%, #deb887 90%);
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3);
+}
+
+/* 말 스타일 */
+.mal {
+  transition: transform 0.1s;
+  cursor: grab;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: bold;
+  color: white;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+  touch-action: none;
+}
+.mal:active {
+  cursor: grabbing;
+  transform: scale(1.1);
+  z-index: 100;
+}
+.mal.finished {
+  cursor: default;
+  opacity: 0.8;
+  transform: scale(0.8);
+  box-shadow: none;
+  border-style: dashed;
+}
+.mal.finished::after {
+  content: "✔";
+  position: absolute;
+  font-size: 1.2rem;
+  color: #10b981;
+  text-shadow: 0 0 2px white;
+}
+
+.station {
+  fill: #fff;
+  stroke: #8b4513;
+  stroke-width: 2px;
+  transition: fill 0.2s, r 0.2s;
+}
+.station.highlight {
+  fill: #fbbf24;
+  stroke: #d97706;
+  stroke-width: 4px;
+  r: 45 !important;
+}
+.station-start-end {
+  stroke: #dc2626;
+  stroke-width: 3px;
+}
+
+/* 나기(Exit) 영역 스타일 */
+.exit-zone {
+  background: rgba(34, 197, 94, 0.05);
+  border: 2px dashed #16a34a;
+  color: #15803d;
+  transition: all 0.3s;
+  opacity: 0.5;
+  pointer-events: none;
+}
+.exit-zone.enabled {
+  opacity: 1;
+  background: rgba(34, 197, 94, 0.2);
+  pointer-events: auto;
+}
+.exit-zone.active {
+  background: rgba(34, 197, 94, 0.5);
+  transform: scale(1.1);
+  box-shadow: 0 0 20px rgba(34, 197, 94, 0.5);
+  border-style: solid;
+}
+
+/* 애니메이션 효과 */
+@keyframes popIn {
+  0% {
+    transform: translate(-50%, -50%) scale(0.5);
+    opacity: 0;
+  }
+  50% {
+    transform: translate(-50%, -50%) scale(1.2);
+    opacity: 1;
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(1);
+    opacity: 1;
+  }
+}
+.action-effect {
+  animation: popIn 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
